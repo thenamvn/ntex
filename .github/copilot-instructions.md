@@ -30,6 +30,7 @@ Bạn đang làm việc trong một dự án IoT với kiến trúc:
 ## Yêu cầu chính cho Copilot
 
 1. **NestJS Server**
+   - Sử dụng Prisma ORM (Postgres)
    - Module: 
      - `MqttModule` (dùng `mqtt.js` hoặc `@nestjs/microservices`)
      - `DatabaseModule` (TypeORM hoặc Mongoose)
@@ -97,13 +98,21 @@ Bạn đang làm việc trong một dự án IoT với kiến trúc:
    * Hàm service: `send(token: string, title: string, body: string)`
 
 ---
-
+**Example Output:**
+File: "src/components/ui/Button.tsx"
+```tsx
+// your code here
+```
+File: "src/features/auth/services/authService.ts"
+```tsx
+// your code here
+```
 ## Coding style
-
+* Ghi rõ lệnh cài thư viện hay dependency cần thiết.
 * Viết code theo chuẩn NestJS module/service/controller.
 * Sử dụng TypeScript.
 * Tách module rõ ràng để dễ maintain.
 * Code gọn, có comment ngắn giải thích.
-
+* Ghi rõ địa chỉ file của mỗi đoạn code.
 ```---
 Hãy bắt đầu với việc tạo các module cơ bản và dần hoàn thiện theo yêu cầu trên nhé!
