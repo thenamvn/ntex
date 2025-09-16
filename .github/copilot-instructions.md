@@ -30,6 +30,7 @@ Bạn đang làm việc trong một dự án IoT với kiến trúc:
 ## Yêu cầu chính cho Copilot
 
 1. **NestJS Server**
+   - Dùng Yarn
    - Sử dụng Prisma ORM (Postgres)
    - Module: 
      - `MqttModule` (dùng `mqtt.js` hoặc `@nestjs/microservices`)

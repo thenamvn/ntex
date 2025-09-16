@@ -1,29 +1,38 @@
-import { Injectable, Inject, OnModuleInit } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import * as mqtt from 'mqtt';
 
 @Injectable()
 export class MqttService implements OnModuleInit {
-  constructor(
-    @Inject('MQTT_CLIENT') private client: ClientProxy, // Inject ClientProxy từ module
-  ) {}
+  private client: mqtt.MqttClient;
 
-  async onModuleInit() {
-    await this.client.connect(); // Kết nối MQTT broker
-    console.log('Connected to MQTT broker via NestJS ClientProxy');
+  constructor() {
+    this.client = mqtt.connect('mqtt://localhost:1883'); // Thay bằng URL broker thực tế
   }
 
-  // Subscribe topic (NestJS dùng pattern, không subscribe trực tiếp)
-  // Để listen, dùng trong gateway hoặc controller với send()
-  async subscribeToTopic(topic: string) {
-    // MQTT là pub/sub, NestJS khuyến dùng pattern để handle
-    console.log(`Pattern set for ${topic} - handle in gateway if needed`);
+  onModuleInit() {
+    this.client.on('connect', () => {
+      console.log('Connected to MQTT broker');
+    });
+
+    this.client.on('message', (topic, message) => {
+      // Xử lý message nhận được (parse JSON, lưu DB, emit WebSocket, gửi FCM nếu cần)
+      const data = JSON.parse(message.toString());
+      console.log(`Received on ${topic}:`, data);
+      // TODO: Integrate with DatabaseService, AppGateway, PushService
+    });
   }
 
-  // Publish message
-  async publish(topic: string, payload: any) {
-    return this.client.emit(topic, payload); // Emit event qua MQTT
+  async publish(topic: string, data: any) {
+    this.client.publish(topic, JSON.stringify(data));
   }
 
-  // Nếu cần listen incoming, dùng trong AppGateway:
-  // this.mqttService.client.send(pattern, {}).subscribe((data) => { ... });
+  async subscribe(topic: string) {
+    this.client.subscribe(topic, (err) => {
+      if (err) {
+        console.error('Subscribe error:', err);
+      } else {
+        console.log(`Subscribed to ${topic}`);
+      }
+    });
+  }
 }

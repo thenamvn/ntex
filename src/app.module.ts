@@ -11,6 +11,6 @@ import { ApiModule } from './api/api.module';
 @Module({
   imports: [DatabaseModule, MqttModule, PushModule, ApiModule],
   controllers: [AppController],
-  providers: [AppService, MqttService, AppGateway],
+  providers: [AppService, AppGateway],
 })
 export class AppModule {}

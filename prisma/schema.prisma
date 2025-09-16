@@ -6,7 +6,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
+  // output   = "../generated/prisma"
 }
 
 datasource db {
@@ -15,11 +15,13 @@ datasource db {
 }
 
 model DeviceData {
-  id             Int      @id @default(autoincrement())
+  id             Int      @default(autoincrement())
   device_id      String
   temperature    Float
   acceleration   Float[]
   battery        Int
   audio_segment  String?
   timestamp      DateTime @default(now())
+  @@id([id, timestamp])
+  @@map("DeviceData")
 }
