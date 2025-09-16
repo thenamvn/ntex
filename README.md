@@ -1,98 +1,436 @@
+# NTEX IoT Server
+
 <p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
+  <a href="http://nestjs.com/" target="blank">
+    <img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" />
+  </a>
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+**Server backend cho hệ thống giám sát sức khỏe trẻ em thông qua IoT Tag & Dock**
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🏗️ Kiến trúc hệ thống
 
-## Description
+```mermaid
+flowchart TD
+    subgraph Tag["Tag BLE"]
+        T1[Sensor: Nhiệt độ, Gia tốc]
+        T2[Mic + VAD: phát hiện tiếng khóc]
+        T3[Gửi dữ liệu qua BLE]
+    end
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+    subgraph Dock["Dock"]
+        D1[Nhận BLE từ Tag]
+        D2["Xử lý AI Edge<br/>(phân loại khóc, tư thế, sốt)"]
+        D3[Nén audio khi cần]
+        D4[Publish dữ liệu lên MQTT]
+    end
 
-## Project setup
+    subgraph MQTT["MQTT Broker"]
+        M1[Nhận data từ Dock]
+        M2[Fanout cho subscriber]
+    end
 
-```bash
-$ yarn install
+    subgraph Server["Server"]
+        S1[Subscriber chính]
+        S2[Lưu DB]
+        S3[Phân tích nâng cao]
+        S4[Sinh cảnh báo]
+        S5["Gửi realtime → App<br/>(WebSocket)"]
+        S6["Gửi push → App<br/>(FCM)"]
+    end
+
+    subgraph App["App Mobile"]
+        A1["Nhận realtime<br/>(WebSocket)"]
+        A2["Nhận cảnh báo<br/>(FCM background)"]
+        A3["Gửi feedback → Server<br/>(REST/WebSocket)"]
+    end
+
+    subgraph Dev["Option Dev/Test"]
+        AD["App sub MQTT<br/>(ít dùng production)"]
+    end
+
+    Tag --> Dock
+    Dock --> MQTT
+    MQTT --> Server
+    MQTT --> Dev
+    Server --> App
+    App --> Server
 ```
 
-## Compile and run the project
+## 🚀 Khởi chạy dự án
 
+### Cài đặt dependencies
 ```bash
-# development
-$ yarn run start
-
-# watch mode
-$ yarn run start:dev
-
-# production mode
-$ yarn run start:prod
+yarn install
 ```
 
-## Run tests
-
+### Thiết lập môi trường
 ```bash
-# unit tests
-$ yarn run test
-
-# e2e tests
-$ yarn run test:e2e
-
-# test coverage
-$ yarn run test:cov
+# Copy file .env.example và điều chỉnh
+cp .env.example .env
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ yarn install -g @nestjs/mau
-$ mau deploy
+File .env:
+```env
+DATABASE_URL="postgres://username:password@host:port/database?sslmode=require"
+MQTT_BROKER_URL="mqtt://broker.emqx.io:1883"
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Chạy database migrations
+```bash
+npx prisma migrate dev
+npx prisma generate
+```
 
-## Resources
+### Khởi chạy server
+```bash
+# Development mode
+yarn start:dev
 
-Check out a few resources that may come in handy when working with NestJS:
+# Production mode
+yarn start:prod
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Server sẽ chạy tại: `http://localhost:3000`
 
-## Support
+## 📡 MQTT Integration
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Server lắng nghe topic: `iot/tag/data`
 
-## Stay in touch
+**Format dữ liệu từ Dock:**
+```json
+{
+  "device_id": "TAG_001",
+  "temperature": 37.5,
+  "acceleration": [0.1, -0.2, 9.8],
+  "battery": 85,
+  "audio_segment": "base64_encoded_audio_or_null",
+  "timestamp": 1694876400
+}
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+**Gửi command xuống Tag/Dock:**
+```javascript
+// Topic: iot/tag/command/{device_id}
+{
+  "action": "feedback_received",
+  "message": "Đã nhận phản hồi từ phụ huynh",
+  "timestamp": 1694876500
+}
+```
 
-## License
+## 🌐 REST API
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Health Check
+```http
+GET /api/health
+```
+**Response:**
+```json
+{
+  "status": "ok",
+  "uptime": 3600.123,
+  "timestamp": "2025-09-16T12:00:00.000Z",
+  "version": "1.0.0",
+  "services": {
+    "database": "connected",
+    "mqtt": "connected"
+  }
+}
+```
+
+### MQTT Health
+```http
+GET /api/health/mqtt
+```
+**Response:**
+```json
+{
+  "status": "connected",
+  "timestamp": "2025-09-16T12:00:00.000Z"
+}
+```
+
+### Gửi Feedback
+```http
+POST /api/feedback
+Content-Type: application/json
+
+{
+  "device_id": "TAG_001",
+  "feedback": "Bé đã ngủ ngon"
+}
+```
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "Feedback saved successfully"
+}
+```
+
+### Lấy dữ liệu thiết bị
+```http
+GET /api/device/TAG_001/data?limit=50
+```
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "device_id": "TAG_001",
+    "temperature": 37.5,
+    "acceleration": [0.1, -0.2, 9.8],
+    "battery": 85,
+    "audio_segment": null,
+    "timestamp": "2025-09-16T12:00:00.000Z"
+  }
+]
+```
+
+### Lấy dữ liệu theo khoảng thời gian
+```http
+GET /api/device/TAG_001/data/range?start=2025-09-16T00:00:00.000Z&end=2025-09-16T23:59:59.999Z
+```
+
+## 🔌 WebSocket (Real-time)
+
+Kết nối: `ws://localhost:3000`
+
+**Event nhận được:**
+```javascript
+// Khi có dữ liệu mới từ Tag
+socket.on('newData', (data) => {
+  console.log('Dữ liệu mới:', data);
+  // data = { ...deviceData, alert: "Nguy cơ sốt cao" }
+});
+```
+
+**Example client code (JavaScript):**
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3000');
+
+socket.on('connect', () => {
+  console.log('✅ Connected to WebSocket');
+});
+
+socket.on('newData', (data) => {
+  console.log('📡 New device data:', data);
+  
+  if (data.alert) {
+    // Hiển thị cảnh báo trong app
+    showAlert(data.alert, data);
+  }
+});
+
+socket.on('disconnect', () => {
+  console.log('📴 Disconnected from WebSocket');
+});
+```
+
+## 📱 Push Notifications (FCM)
+
+Server tự động gửi push notification khi:
+- Nhiệt độ > 38.0°C → "Nguy cơ sốt cao"
+- Pin < 20% → "Pin yếu"  
+- Phát hiện audio → "Phát hiện tiếng khóc"
+
+**Format notification:**
+```json
+{
+  "title": "Cảnh báo sức khỏe",
+  "body": "Bé TAG_001: Nguy cơ sốt cao. Nhiệt độ: 38.5°C"
+}
+```
+
+## 📊 Database Schema (Prisma)
+
+```prisma
+model DeviceData {
+  id            Int      @id @default(autoincrement())
+  device_id     String
+  temperature   Float
+  acceleration  Json
+  battery       Int
+  audio_segment String?
+  timestamp     DateTime @default(now())
+
+  @@map("device_data")
+}
+
+model Feedback {
+  id        Int      @id @default(autoincrement())
+  device_id String
+  feedback  String
+  timestamp DateTime @default(now())
+
+  @@map("feedback")
+}
+```
+
+## 🧪 Testing
+
+### Test MQTT với CLI
+```bash
+# Cài MQTT CLI
+npm install -g mqtt
+
+# Subscribe để xem data
+mqtt_sub -h broker.emqx.io -p 1883 -t "iot/tag/data"
+
+# Publish test data
+mqtt_pub -h broker.emqx.io -p 1883 -t "iot/tag/data" -m '{
+  "device_id": "TAG_001",
+  "temperature": 39.0,
+  "acceleration": [0.1, -0.2, 9.8],
+  "battery": 15,
+  "audio_segment": null,
+  "timestamp": 1694876400
+}'
+```
+
+### Test API với curl
+```bash
+# Health check
+curl http://localhost:3000/api/health
+
+# Send feedback
+curl -X POST http://localhost:3000/api/feedback \
+  -H "Content-Type: application/json" \
+  -d '{"device_id": "TAG_001", "feedback": "Test feedback"}'
+
+# Get device data
+curl "http://localhost:3000/api/device/TAG_001/data?limit=10"
+```
+
+### Test WebSocket với wscat
+```bash
+# Cài wscat
+npm install -g wscat
+
+# Connect và lắng nghe
+wscat -c ws://localhost:3000
+```
+
+## 🐳 Docker Development
+
+```bash
+# Start MQTT broker
+docker run -d --name mosquitto -p 1883:1883 eclipse-mosquitto
+
+# Start PostgreSQL
+docker run -d --name postgres \
+  -e POSTGRES_PASSWORD=password \
+  -e POSTGRES_DB=ntex \
+  -p 5432:5432 postgres:15
+```
+
+## 📂 Cấu trúc dự án
+
+```
+src/
+├── api/                 # REST API module
+│   ├── api.controller.ts
+│   ├── api.service.ts
+│   └── api.module.ts
+├── database/            # Database & Prisma
+│   ├── prisma.service.ts
+│   └── database.module.ts
+├── mqtt/                # MQTT client
+│   ├── mqtt.service.ts
+│   └── mqtt.module.ts
+├── push/                # FCM push notifications
+│   ├── push.service.ts
+│   └── push.module.ts
+├── websocket/           # WebSocket gateway
+│   ├── app.gateway.ts
+│   └── websocket.module.ts
+├── app.controller.ts
+├── app.service.ts
+├── app.module.ts
+└── main.ts
+```
+
+## 🔧 Scripts
+
+```bash
+# Development
+yarn start:dev          # Chạy với hot reload
+yarn start:debug        # Chạy debug mode
+
+# Production
+yarn build              # Build project
+yarn start:prod         # Chạy production
+
+# Database
+yarn prisma:generate    # Generate Prisma client
+yarn prisma:migrate     # Chạy migrations
+yarn prisma:studio      # Mở Prisma Studio
+
+# Testing
+yarn test               # Unit tests
+yarn test:e2e           # End-to-end tests
+yarn test:cov           # Test coverage
+```
+
+## 🐛 Troubleshooting
+
+### MQTT connection issues
+```bash
+# Test broker connectivity
+telnet broker.emqx.io 1883
+
+# Check if port is open
+nmap -p 1883 broker.emqx.io
+```
+
+### Database connection issues
+```bash
+# Test Postgres connection
+psql "postgresql://username:password@host:port/database"
+
+# Check if port is open
+nmap -p 5432 your-db-host
+```
+
+### Common errors
+- `ECONNRESET`: MQTT broker không khả dụng
+- `P1001`: Database connection timeout
+- `WebSocket failed`: Kiểm tra CORS settings
+
+## 📝 Logs
+
+Server log format:
+```
+🔄 Attempting to connect to MQTT broker: mqtt://broker.emqx.io:1883
+✅ Connected to MQTT broker
+📥 Subscribed to iot/tag/data
+📡 Received on iot/tag/data: {"device_id":"TAG_001",...}
+✅ Processed data for device TAG_001
+📱 Push notification sent
+```
+
+## 🤝 Contributing
+
+1. Fork project
+2. Tạo feature branch: `git checkout -b feature/new-feature`
+3. Commit changes: `git commit -am 'Add new feature'`
+4. Push branch: `git push origin feature/new-feature`
+5. Tạo Pull Request
+
+## 📄 License
+
+MIT Licensed. Xem file LICENSE để biết thêm chi tiết.
+
+## 👥 Authors
+
+- **NT Team** - *Initial work*
+
+## 🔗 Links
+
+- [NestJS Documentation](https://docs.nestjs.com)
+- [Prisma Documentation](https://www.prisma.io/docs)
+- [MQTT.js Documentation](https://github.com/mqttjs/MQTT.js)
+- [Socket.io Documentation](https://socket.io/docs/v4/)
