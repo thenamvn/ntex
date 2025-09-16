@@ -6,7 +6,7 @@
   </a>
 </p>
 
-**Server backend cho hệ thống giám sát sức khỏe trẻ em thông qua IoT Tag & Dock**
+**Server backend cho hệ thống giám sát sức khỏe trẻ em thông qua Tag & Dock**
 
 ## 🏗️ Kiến trúc hệ thống
 
@@ -73,7 +73,7 @@ cp .env.example .env
 File .env:
 ```env
 DATABASE_URL="postgres://username:password@host:port/database?sslmode=require"
-MQTT_BROKER_URL="mqtt://broker.emqx.io:1883"
+MQTT_BROKER_URL="mqtt://broker.emqx.io:1883" // Sau này thiết lập MQTT riêng sau
 ```
 
 ### Chạy database migrations
