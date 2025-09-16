@@ -16,6 +16,7 @@ datasource db {
 
 model DeviceData {
   id             Int      @default(autoincrement())
+  dock_id        String   // Thêm dock_id
   device_id      String
   temperature    Float
   acceleration   Float[]
@@ -24,4 +25,36 @@ model DeviceData {
   timestamp      DateTime @default(now())
   @@id([id, timestamp])
   @@map("DeviceData")
+}
+
+// Thêm model để lưu FCM token
+model UserDevice {
+  id        Int      @id @default(autoincrement())
+  user_id   String   // ID của user (phụ huynh)
+  device_id String   // ID của Tag
+  dock_id   String?  // ID của Dock (optional)
+  fcm_token String?  // FCM token của app trên điện thoại
+  device_name String? // Tên thiết bị (ví dụ: "Tag của bé An")
+  is_active Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  
+  @@unique([user_id, device_id])
+  @@index([device_id])
+  @@index([dock_id])
+  @@map("UserDevice")
+}
+
+// Model để lưu lịch sử cảnh báo
+model Alert {
+  id        Int      @id @default(autoincrement())
+  device_id String
+  alert_type String  // high_temp, low_battery, crying_detected, etc
+  message   String
+  is_sent   Boolean  @default(false)  // Đã gửi FCM chưa
+  is_read   Boolean  @default(false)  // User đã xem chưa
+  timestamp DateTime @default(now())
+  
+  @@index([device_id, timestamp])
+  @@map("Alert")
 }

@@ -10,6 +10,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   private isConnected = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
+  private reconnectDelay = 5000;
 
   constructor(
     private prisma: PrismaService,
@@ -28,23 +29,25 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   }
 
   private connectMqtt() {
-    const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://test.mosquitto.org:1883';
+    const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://broker.emqx.io:1883';
     
     console.log(`🔄 Attempting to connect to MQTT broker: ${brokerUrl}`);
     
     this.client = mqtt.connect(brokerUrl, {
       clientId: `ntex-server-${Math.random().toString(16).slice(3)}`,
       clean: true,
-      connectTimeout: 4000,
-      reconnectPeriod: 5000,
+      connectTimeout: 10000,
+      reconnectPeriod: 0,
       keepalive: 60,
+      username: process.env.MQTT_USERNAME || undefined,
+      password: process.env.MQTT_PASSWORD || undefined,
     });
 
     this.client.on('connect', () => {
       console.log('✅ Connected to MQTT broker');
       this.isConnected = true;
       this.reconnectAttempts = 0;
-      this.subscribe('iot/tag/data');
+      this.subscribeToTopic('iot/tag/data');
     });
 
     this.client.on('message', async (topic, message) => {
@@ -52,7 +55,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         const data = JSON.parse(message.toString());
         console.log(`📡 Received on ${topic}:`, data);
         
-        await this.handleDeviceData(data);
+        await this.handleDockData(data);
       } catch (error) {
         console.error('❌ MQTT message parsing error:', error);
       }
@@ -61,14 +64,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     this.client.on('error', (error) => {
       console.error('❌ MQTT connection error:', error.message);
       this.isConnected = false;
-      
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        console.error('❌ Max reconnection attempts reached. Stopping reconnection.');
-        this.client.end();
-      } else {
-        this.reconnectAttempts++;
-        console.log(`🔄 Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
-      }
+      this.handleReconnection();
     });
 
     this.client.on('disconnect', () => {
@@ -76,29 +72,43 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       this.isConnected = false;
     });
 
-    this.client.on('reconnect', () => {
-      console.log('🔄 Reconnecting to MQTT broker...');
-    });
-
     this.client.on('offline', () => {
       console.log('📴 MQTT client is offline');
       this.isConnected = false;
+      this.handleReconnection();
     });
   }
 
-  private async handleDeviceData(data: any) {
+  private handleReconnection() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('❌ Max reconnection attempts reached. Stopping reconnection.');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    console.log(`🔄 Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${this.reconnectDelay}ms`);
+    
+    setTimeout(() => {
+      if (!this.isConnected) {
+        this.connectMqtt();
+      }
+    }, this.reconnectDelay);
+  }
+
+  private async handleDockData(data: any) {
     try {
-      // 1. Validate data
-      if (!data.device_id) {
-        console.error('❌ Missing device_id in data');
+      // 1. Validate required fields
+      if (!data.dock_id || !data.device_id) {
+        console.error('❌ Missing dock_id or device_id in data');
         return;
       }
 
-      // 2. Parse và validate data
+      // 2. Parse và validate data theo format mới
       const deviceData = {
+        dock_id: data.dock_id,
         device_id: data.device_id,
         temperature: parseFloat(data.temperature) || 0,
-        acceleration: Array.isArray(data.acceleration) ? data.acceleration : [],
+        acceleration: Array.isArray(data.acceleration) ? data.acceleration : [0, 0, 0],
         battery: parseInt(data.battery) || 0,
         audio_segment: data.audio_segment || null,
         timestamp: data.timestamp ? new Date(data.timestamp * 1000) : new Date(),
@@ -111,53 +121,132 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
       // 4. Phân tích và tạo cảnh báo
       const alert = this.analyzeData(deviceData);
-      const broadcastData = { ...savedData, alert };
+      
+      // 5. Tạo payload gửi cho App
+      const appPayload = {
+        device_id: deviceData.device_id,
+        temperature: deviceData.temperature,
+        acceleration: deviceData.acceleration,
+        battery: deviceData.battery,
+        timestamp: deviceData.timestamp,
+        alert: alert,
+      };
 
-      // 5. Broadcast qua WebSocket cho app online
-      this.appGateway.broadcast(broadcastData);
+      // 6. Broadcast qua WebSocket cho app online
+      this.appGateway.broadcast(appPayload);
 
-      // 6. Gửi FCM nếu có cảnh báo
+      // 7. Gửi FCM nếu có cảnh báo
       if (alert) {
         await this.sendPushNotification(deviceData, alert);
       }
 
-      console.log(`✅ Processed data for device ${deviceData.device_id}`);
+      console.log(`✅ Processed data for device ${deviceData.device_id} from dock ${deviceData.dock_id}`);
     } catch (error) {
-      console.error('❌ Error handling device data:', error);
+      console.error('❌ Error handling dock data:', error);
     }
   }
 
   private analyzeData(data: any): string | null {
-    // Logic phân tích dữ liệu
     if (data.temperature > 38.0) {
-      return 'Nguy cơ sốt cao';
+      return 'high_temp';
     }
     if (data.battery < 20) {
-      return 'Pin yếu';
+      return 'low_battery';
     }
     if (data.audio_segment) {
-      return 'Phát hiện tiếng khóc';
+      return 'crying_detected';
     }
+    
+    const acceleration = data.acceleration;
+    if (acceleration && acceleration.length >= 3) {
+      const magnitude = Math.sqrt(
+        acceleration[0] ** 2 + acceleration[1] ** 2 + acceleration[2] ** 2
+      );
+      if (magnitude > 15) {
+        return 'high_movement';
+      }
+    }
+
     return null;
   }
 
   private async sendPushNotification(data: any, alert: string) {
-    // Trong thực tế, cần query FCM token từ DB theo device_id
-    const fcmToken = 'EXAMPLE_FCM_TOKEN'; // TODO: Lấy từ DB
-    
     try {
-      await this.pushService.send(
-        fcmToken,
-        'Cảnh báo sức khỏe',
-        `Bé ${data.device_id}: ${alert}. Nhiệt độ: ${data.temperature}°C`
-      );
-      console.log('📱 Push notification sent');
+      // Query FCM tokens từ DB theo device_id
+      const userDevices = await this.prisma.userDevice.findMany({
+        where: { 
+          device_id: data.device_id,
+          is_active: true,
+          fcm_token: { not: null }
+        }
+      });
+
+      if (userDevices.length === 0) {
+        console.log(`⚠️ No FCM tokens found for device ${data.device_id}`);
+        return;
+      }
+
+      const alertMessages = {
+        high_temp: `Bé ${data.device_id} sốt cao ${data.temperature}°C`,
+        low_battery: `Pin Tag ${data.device_id} yếu (${data.battery}%)`,
+        crying_detected: `Phát hiện tiếng khóc từ ${data.device_id}`,
+        high_movement: `Chuyển động bất thường từ ${data.device_id}`,
+      };
+
+      const message = alertMessages[alert] || `Cảnh báo từ ${data.device_id}`;
+      
+      // Lưu alert vào DB
+      const savedAlert = await this.prisma.alert.create({
+        data: {
+          device_id: data.device_id,
+          alert_type: alert,
+          message: message,
+        }
+      });
+
+      // Gửi FCM cho tất cả các token
+      const fcmPromises = userDevices.map(async (userDevice) => {
+        if (!userDevice.fcm_token) return;
+        
+        try {
+          await this.pushService.send(
+            userDevice.fcm_token,
+            'Cảnh báo sức khỏe',
+            message,
+            {
+              device_id: data.device_id,
+              alert_type: alert,
+              alert_id: savedAlert.id.toString(),
+              temperature: data.temperature.toString(),
+            }
+          );
+          console.log(`📱 Push notification sent to user ${userDevice.user_id}`);
+        } catch (error) {
+          console.error(`❌ FCM send error for token ${userDevice.fcm_token}:`, error);
+          
+          if (error.code === 'messaging/registration-token-not-registered') {
+            await this.prisma.userDevice.update({
+              where: { id: userDevice.id },
+              data: { fcm_token: null }
+            });
+          }
+        }
+      });
+
+      await Promise.allSettled(fcmPromises);
+      
+      // Cập nhật trạng thái alert đã gửi
+      await this.prisma.alert.update({
+        where: { id: savedAlert.id },
+        data: { is_sent: true }
+      });
+
     } catch (error) {
-      console.error('❌ FCM send error:', error);
+      console.error('❌ Error in sendPushNotification:', error);
     }
   }
 
-  async publish(topic: string, data: any) {
+  async publishToTopic(topic: string, data: any) {
     if (!this.isConnected) {
       console.warn('⚠️ MQTT not connected, cannot publish');
       return false;
@@ -173,7 +262,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async subscribe(topic: string) {
+  private subscribeToTopic(topic: string) {
     if (!this.isConnected) {
       console.warn('⚠️ MQTT not connected, cannot subscribe');
       return;
@@ -191,7 +280,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   // Method để gửi command xuống Tag/Dock
   async sendCommand(deviceId: string, command: any) {
     const topic = `iot/tag/command/${deviceId}`;
-    return await this.publish(topic, {
+    return await this.publishToTopic(topic, {
       ...command,
       timestamp: Math.floor(Date.now() / 1000),
     });

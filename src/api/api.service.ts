@@ -67,4 +67,70 @@ export class RestApiService {
       orderBy: { timestamp: 'desc' },
     });
   }
+
+    async registerDevice(data: { 
+    user_id: string; 
+    device_id: string; 
+    dock_id?: string;
+    fcm_token: string;
+    device_name?: string;
+  }) {
+    const userDevice = await this.prisma.userDevice.upsert({
+      where: {
+        user_id_device_id: {
+          user_id: data.user_id,
+          device_id: data.device_id,
+        }
+      },
+      update: {
+        fcm_token: data.fcm_token,
+        dock_id: data.dock_id,
+        device_name: data.device_name,
+        is_active: true,
+        updated_at: new Date(),
+      },
+      create: {
+        user_id: data.user_id,
+        device_id: data.device_id,
+        dock_id: data.dock_id,
+        fcm_token: data.fcm_token,
+        device_name: data.device_name,
+      }
+    });
+
+    console.log(`📱 Device registered: ${data.device_id} for user ${data.user_id}`);
+    return { status: 'ok', message: 'Device registered successfully', data: userDevice };
+  }
+
+  async updateFcmToken(data: { user_id: string; device_id: string; fcm_token: string }) {
+    await this.prisma.userDevice.updateMany({
+      where: {
+        user_id: data.user_id,
+        device_id: data.device_id,
+      },
+      data: {
+        fcm_token: data.fcm_token,
+        updated_at: new Date(),
+      }
+    });
+
+    return { status: 'ok', message: 'FCM token updated successfully' };
+  }
+
+  async getDeviceAlerts(deviceId: string, limit = 50) {
+    return this.prisma.alert.findMany({
+      where: { device_id: deviceId },
+      orderBy: { timestamp: 'desc' },
+      take: limit,
+    });
+  }
+
+  async markAlertAsRead(alertId: number) {
+    await this.prisma.alert.update({
+      where: { id: alertId },
+      data: { is_read: true }
+    });
+
+    return { status: 'ok', message: 'Alert marked as read' };
+  }
 }
