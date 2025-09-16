@@ -27,6 +27,8 @@
     "@nestjs/platform-socket.io": "^11.1.6",
     "@nestjs/websockets": "^11.1.6",
     "@prisma/client": "^6.16.1",
+    "@types/pg": "^8.15.5",
+    "dotenv": "^17.2.2",
     "firebase-admin": "^13.5.0",
     "mqtt": "^5.14.1",
     "pg": "^8.16.3",
